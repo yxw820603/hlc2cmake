@@ -2,6 +2,33 @@ import sys.io.File;
 import sys.FileSystem;
 import haxe.io.Bytes;
 import StringTools;
+import haxe.Json;
+
+// Set default values for command line arguments
+class CommandLineArgs {
+    public var updateLibs: Bool; // Indicates whether to update libraries such as hashlink and SDL
+    public var outputDir: String; // Directory for C source output
+    public var libraryName: String; // The name of the dynamic library for the game
+    public var gameMain: String; // The entry point of the game
+    public var installDir: String; // Installation directory, not used in Android, just for testing
+
+    public function new() {
+        // Set to false to prevent automatic updates during build
+        updateLibs = false;
+
+        // Directory for C source output
+        outputDir = "android/app/src/main/cpp/haxe";
+
+        // The name of the dynamic library for the game
+        libraryName = "mygame";
+
+        // The entry point of the game
+        gameMain = "Test";
+
+        // Installation directory, not used in Android, just for testing
+        installDir = "install";
+    }
+}
 
 class Build {
     static function runGitCommand(args: Array<String>, workingDir: String = null, maxRetries: Int = 3): Bool {
@@ -13,12 +40,13 @@ class Build {
         while (retryCount < maxRetries && !success) {
             try {
                 if (workingDir != null && FileSystem.exists(workingDir)) {
+                    // Change to the specified working directory
                     Sys.setCwd(workingDir);
                 }
                 process = new sys.io.Process("git", args);
                 success = process.exitCode() == 0;
                 
-                // 输出任何错误信息
+                // Output any error messages
                 var error = process.stderr.readAll().toString();
                 if (error.length > 0) {
                     Sys.stderr().writeString(error);
@@ -26,13 +54,13 @@ class Build {
                 
                 if (!success && retryCount < maxRetries - 1) {
                     Sys.println('Command failed, retrying (${retryCount + 1}/$maxRetries)...');
-                    Sys.sleep(2); // 等待 2 秒后重试
+                    Sys.sleep(2); // Wait 2 seconds before retrying
                 }
             } catch (e: Dynamic) {
                 Sys.stderr().writeString('Error executing git command: $e\n');
                 if (retryCount < maxRetries - 1) {
                     Sys.println('Command failed, retrying (${retryCount + 1}/$maxRetries)...');
-                    Sys.sleep(2); // 等待 2 秒后重试
+                    Sys.sleep(2); // Wait 2 seconds before retrying
                 }
             }
             
@@ -44,7 +72,7 @@ class Build {
             retryCount++;
         }
         
-        // 恢复原来的工作目录
+        // Restore the original directory
         Sys.setCwd(originalDir);
         
         return success;
@@ -65,19 +93,19 @@ class Build {
         } else if (forceUpdate) {
             Sys.println('Updating $targetDir...');
 
-            // 拉取最新代码
+            // Fetch the latest code
             if (!runGitCommand(["fetch", "origin"], targetDir)) {
                 throw 'Failed to fetch updates for: $targetDir';
             }
 
-            // 如果指定了分支，就切换到该分支
+            // If a branch is specified, switch to that branch
             if (branch != null) {
                 if (!runGitCommand(["checkout", branch], targetDir)) {
                     throw 'Failed to checkout branch: $branch';
                 }
             }
 
-            // 重置到远程分支的最新状态
+            // Reset to the latest state of the remote branch
             var resetTarget = branch != null ? 'origin/${branch}' : 'origin/HEAD';
             if (!runGitCommand(["reset", "--hard", resetTarget], targetDir)) {
                 throw 'Failed to update: $targetDir';
@@ -86,12 +114,12 @@ class Build {
     }
 
     static function setupLibraries(forceUpdate: Bool) {
-        // 创建 libs 目录
+        // Create libs directory
         if (!sys.FileSystem.exists("libs")) {
             sys.FileSystem.createDirectory("libs");
         }
 
-        // 克隆或更新 HashLink
+        // Clone or update HashLink
         cloneOrUpdateRepo(
             "https://github.com/HaxeFoundation/hashlink",
             "libs/hashlink",
@@ -99,7 +127,7 @@ class Build {
             forceUpdate
         );
 
-        // 克隆或更新 SDL，使用 SDL2 分支
+        // Clone or update SDL, using SDL2 branch
         cloneOrUpdateRepo(
             "https://github.com/libsdl-org/SDL.git",
             "libs/SDL",
@@ -109,29 +137,40 @@ class Build {
     }
 
     static function main() {
-        // 解析命令行参数
-        var args = Sys.args();
-        var updateLibs = false;
-        var outputDir = "out";
-        var libraryName = "mygame";
-        var gameMain = "Test";
-        var installDir = "install";
+        // Initialize default values
+        var args = new CommandLineArgs();
 
-        for (i in 0...args.length) {
-            if (args[i] == "--update-libs") {
-                updateLibs = true;
+        // Parse command line arguments
+        var inputArgs = Sys.args();
+        for (i in 0...inputArgs.length) {
+            if (inputArgs[i] == "--update-libs") {
+                args.updateLibs = true;
             }
         }
 
-        // 设置依赖库
+        // Use the new argument structure
+        var updateLibs = args.updateLibs;
+        var outputDir = args.outputDir;
+        var libraryName = args.libraryName;
+        var gameMain = args.gameMain;
+        var installDir = args.installDir;
+
+        // Set up dependencies
         setupLibraries(updateLibs);
 
-        // 构建 HXML 内容
+        // Ensure output directory exists
+        if (!FileSystem.exists(outputDir)) {
+            FileSystem.createDirectory(outputDir);
+        }
+
+        // Build HXML content
         var hxmlContent = [
             "# Common settings",
             '-D work-dir=${outputDir}',
             '-D library-name=${libraryName}',
             '-D install-dir=${installDir}',
+            "",
+            "--each",
             "",
             "-lib heaps",
             "-lib format",
@@ -150,39 +189,30 @@ class Build {
             "",
             "--next",
             "",
-            "# Run Hlc2Cmake",
+            "# Run Hlc2Cmake,Hlc2Cmake.hx need -D defined in .build.hxml ",
             "--main Hlc2Cmake",
             "--run Hlc2Cmake"
         ];
 
-        // 确保输出目录存在
-        if (!FileSystem.exists(outputDir)) {
-            FileSystem.createDirectory(outputDir);
-        }
-
-        // 写入 HXML 文件
         var hxmlPath = ".build.hxml";
         File.saveContent(hxmlPath, hxmlContent.join("\n"));
         Sys.println('Generated ${hxmlPath}');
 
-        // 执行 HXML
+        // Execute HXML, call command: haxe .build.hxml
         Sys.println('Running haxe ${hxmlPath}...');
         var process = new sys.io.Process('haxe', [hxmlPath]);
         var exitCode = process.exitCode();
-        
-        // 输出编译结果
+
+        // Output compilation results
         var output = process.stdout.readAll().toString();
         var error = process.stderr.readAll().toString();
-        
         if (output.length > 0) Sys.println(output);
         if (error.length > 0) {
-            var bytes = Bytes.ofString(error);
-            Sys.stderr().writeBytes(bytes, 0, bytes.length);
+            Sys.stderr().writeString(error);
+            Sys.exit(1); // Terminate execution on error
         }
-        
-        process.close();
 
-        // 检查编译结果
+        // Check compilation results
         if (exitCode != 0) {
             Sys.println('Build failed with exit code ${exitCode}');
             Sys.exit(exitCode);

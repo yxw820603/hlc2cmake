@@ -6,6 +6,8 @@ class Test extends hxd.App {
     var flow:Flow;
 
     override function init() {
+        Sys.println("Test app initialized!");  // 添加这行调试输出
+        
         // 创建一个流式布局容器
         flow = new Flow(s2d);
         flow.horizontalAlign = Middle;
