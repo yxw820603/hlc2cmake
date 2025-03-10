@@ -16,7 +16,11 @@ class Hlc2Cmake {
 
         // compute relative path from workdir to libs,used in cmake file
         var libsPath = Path.join([Sys.getCwd(), "libs"]);
-        var sourcePath = Path.join([Sys.getCwd(),workDir] );   
+        var sourcePath = if (Path.isAbsolute(workDir)) {
+            workDir;
+        } else {
+            Path.join([Sys.getCwd(), workDir]);
+        }
         var libsRelativePath = getRelative(sourcePath, libsPath);
        
         // Use default values if not defined
@@ -28,6 +32,7 @@ class Hlc2Cmake {
     }
 
     public static function getRelative(fromPath:String, toPath:String):String {
+
         var fromParts = Path.normalize(fromPath).split("/");
         var toParts = Path.normalize(toPath).split("/");
 
@@ -45,13 +50,13 @@ class Hlc2Cmake {
         for (i in commonIndex...toParts.length) {
             relativeParts.push(toParts[i]);
         }
-
         return relativeParts.join("/");
     }
 
     public static function main() {
         // Get configuration from compiler defines
         var config = getConfig();
+
         var workDir = config.workDir;
         var libsRelativePath = config.libsRelativePath;
         var libraryName = config.libraryName;
